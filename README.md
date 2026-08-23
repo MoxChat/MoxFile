@@ -2,8 +2,6 @@
 
 [中文文档](./README.zh-CN.md)
 
-> This is the binary release repository. Source code, target architecture, and protocol specifications are maintained in the main Mox source repository. This README documents deployment of the packaged version.
-
 MoxFile is the ephemeral file relay for MoxChat. It creates upload sessions, accepts encrypted file streams or chunks, provides receiver-specific download URLs, records download receipts, and deletes remote data after it is no longer needed.
 
 ## Release Files
