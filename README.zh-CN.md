@@ -4,9 +4,64 @@
 
 MoxFile 是 MoxChat 的一次性文件中继。它负责创建上传会话、接收加密文件流或分块、生成面向接收者的下载地址、记录下载回执，并在文件不再需要后删除远端数据。
 
+服务源码与目标规格由主 Mox 源码仓库维护，相关规格位于 `spec/files/moxfile/`。本仓库只提供部署说明与可分发产物。
+
+## 从 GitHub 获取
+
+本仓库提供部署文档、预编译二进制和懒猫 LPK，无需安装 Go 或自行编译。当前包版本为 `1.3.0`；源码修订、构建时间见 [构建信息](./BUILD-INFO.md)，文件摘要见 [SHA256SUMS](./SHA256SUMS)。
+
+### 克隆整个发布仓库
+
+安装 Git 后执行，Linux、macOS 和 Windows PowerShell 均适用：
+
+```sh
+git clone --depth 1 https://github.com/MoxChat/MoxFile.git
+cd MoxFile
+```
+
+克隆后，在修改配置之前校验文件。Linux 使用：
+
+```sh
+sha256sum --check SHA256SUMS
+```
+
+macOS 使用：
+
+```sh
+shasum -a 256 --check SHA256SUMS
+```
+
+### 只下载当前平台的文件
+
+Linux x64 示例（在新的部署目录中执行）：
+
+```sh
+mkdir moxfile-release
+cd moxfile-release
+curl -fL --retry 3 -o moxfile-linux-amd64 https://raw.githubusercontent.com/MoxChat/MoxFile/main/moxfile-linux-amd64
+curl -fL --retry 3 -o SHA256SUMS https://raw.githubusercontent.com/MoxChat/MoxFile/main/SHA256SUMS
+awk '$2 == "moxfile-linux-amd64" {print}' SHA256SUMS | sha256sum --check
+chmod +x ./moxfile-linux-amd64
+```
+
+Linux arm64 将命令中的 `linux-amd64` 替换为 `linux-arm64`。macOS 将文件名替换为下表对应的 `darwin-*`，校验命令改用 `shasum -a 256 --check`。
+
+Windows x64 可在新的目录中通过 PowerShell 下载并校验：
+
+```powershell
+Invoke-WebRequest -Uri "https://raw.githubusercontent.com/MoxChat/MoxFile/main/moxfile-windows-amd64.exe" -OutFile ".\moxfile-windows-amd64.exe"
+Invoke-WebRequest -Uri "https://raw.githubusercontent.com/MoxChat/MoxFile/main/SHA256SUMS" -OutFile ".\SHA256SUMS"
+$expected = ((Get-Content .\SHA256SUMS | Select-String '  moxfile-windows-amd64\.exe$').Line -split '\s+')[0]
+if ((Get-FileHash .\moxfile-windows-amd64.exe -Algorithm SHA256).Hash -ne $expected) { throw "SHA-256 校验失败" }
+```
+
+Windows arm64 将 `windows-amd64` 替换为 `windows-arm64`。单文件下载不会包含 `.env`，可按下方部署示例设置环境变量。只有校验通过后才启动或安装。
+
+以上直链读取 `main` 分支。需要固定版本时，把所有下载地址中的 `main` 替换为同一个发布仓库提交 SHA；构建信息中的源码修订属于主源码仓库，不能用于这些下载地址。若下载期间分支更新导致校验失败，请固定同一提交后重新下载。
+
 ## 发布文件
 
-从发布页下载与你的部署目标匹配的文件：
+通过上面的 GitHub 命令获取与你的部署目标匹配的文件：
 
 | 目标 | 文件 |
 | --- | --- |
@@ -20,7 +75,14 @@ MoxFile 是 MoxChat 的一次性文件中继。它负责创建上传会话、接
 
 ## 懒猫微服部署
 
-1. 下载 `moxfile.lpk`。
+1. 使用已克隆的 `moxfile.lpk`，或在新的目录中直接下载并校验（Linux 示例；macOS 把 `sha256sum` 换成 `shasum -a 256`）：
+
+```sh
+curl -fL --retry 3 -o moxfile.lpk https://raw.githubusercontent.com/MoxChat/MoxFile/main/moxfile.lpk
+curl -fL --retry 3 -o SHA256SUMS https://raw.githubusercontent.com/MoxChat/MoxFile/main/SHA256SUMS
+awk '$2 == "moxfile.lpk" {print}' SHA256SUMS | sha256sum --check
+```
+
 2. 在懒猫应用界面安装，或使用 CLI：
 
 ```sh
@@ -33,6 +95,8 @@ lzc-cli app install moxfile.lpk
 LPK 内包含 MoxFile 进程、PostgreSQL 服务，并把文件持久化目录配置到 `/lzcapp/var/storage`。
 
 ## Linux 部署
+
+以下命令假定已进入二进制所在目录，且已安装并启动 PostgreSQL；SQL 在具备创建用户和数据库权限的 PostgreSQL 会话中执行。数据库密码 `change-me` 必须在 SQL 和连接串中同时替换。
 
 先创建 PostgreSQL 数据库：
 
@@ -116,3 +180,21 @@ Windows arm64 主机使用 `moxfile-windows-arm64.exe`。
 - `GET /status/stream` 返回实时状态流。
 
 生产环境建议通过 HTTPS 暴露服务。上传、manifest 和下载地址必须能被发送方和所有接收方访问。MoxChat 客户端应填写外部可访问的文件中继地址，例如 `https://moxfile.example.com`。
+
+## 更新已有部署
+
+先备份数据库、持久化数据和运行配置，停止旧进程。真实配置和数据应放在发布仓库之外；仓库内 `.env` 仅为模板，避免更新时覆盖本地配置。对于通过 Git 克隆且工作区干净的部署：
+
+```sh
+git pull --ff-only
+```
+
+更新后重新校验 `SHA256SUMS`（Linux：`sha256sum --check SHA256SUMS`；macOS：`shasum -a 256 --check SHA256SUMS`），再使用原有运行配置启动新二进制。单文件部署重新下载同一提交下的二进制与校验文件，LPK 部署重新执行安装命令。文件校验失败时不要继续启动。
+
+启动后在另一终端检查实际监听端口（默认 `8981`）：
+
+```sh
+curl -f http://127.0.0.1:8981/healthz
+```
+
+预期返回 HTTP 200。再通过公网服务地址检查 `/healthz`，并在 MoxChat 中验证对应功能。`/healthz` 只表明 HTTP 进程可达，不能替代数据库、Mesh、文件传输、SFU 媒体或 APNs 投递验证。
